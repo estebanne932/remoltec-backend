@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Producto;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Models\ImagenProducto;
+use Illuminate\Support\Facades\Storage;
 
 class ProductoController extends Controller
 {
@@ -31,6 +33,7 @@ class ProductoController extends Controller
         return response()->json($producto);
     }
 
+        
     public function store(Request $request): JsonResponse
     {
         $datos = $request->validate([
@@ -41,44 +44,38 @@ class ProductoController extends Controller
             'precio' => ['required', 'numeric', 'min:0'],
             'stock' => ['required', 'integer', 'min:0'],
             'etiqueta' => ['nullable', 'string', 'max:100'],
-            'activo' => ['boolean'],
+            'activo' => ['sometimes', 'boolean'],
+
+            'imagenes' => ['nullable', 'array'],
+            'imagenes.*' => [
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:5120',
+            ],
         ]);
+
+        $imagenes = $request->file('imagenes', []);
+
+        unset($datos['imagenes']);
 
         $producto = Producto::create($datos);
 
-        $producto->load([
-            'categoria',
-            'imagenes',
-        ]);
+        foreach ($imagenes as $indice => $imagen) {
+            $ruta = $imagen->store('productos', 'public');
+
+            $producto->imagenes()->create([
+                'ruta' => $ruta,
+                'principal' => $indice === 0,
+                'orden' => $indice,
+            ]);
+        }
+
+        $producto->load(['categoria', 'imagenes']);
 
         return response()->json([
             'message' => 'Producto creado correctamente.',
             'producto' => $producto,
         ], 201);
-    }
-
-    public function update(Request $request, Producto $producto): JsonResponse
-    {
-        $validated = $request->validate([
-            'categoria_id' => ['required', 'exists:categorias,id'],
-            'nombre' => ['required', 'string', 'max:255'],
-            'sku' => ['required', 'string', 'max:100', 'unique:productos,sku,' . $producto->id],
-            'descripcion' => ['nullable', 'string'],
-            'precio' => ['required', 'numeric', 'min:0'],
-            'stock' => ['required', 'integer', 'min:0'],
-            'etiqueta' => ['nullable', 'string', 'max:100'],
-            'activo' => ['boolean'],
-        ]);
-
-        $producto->update($validated);
-
-        return response()->json([
-            'message' => 'Producto actualizado correctamente.',
-            'producto' => $producto->load([
-                'categoria',
-                'imagenes',
-            ]),
-        ]);
     }
 
     public function destroy(Producto $producto): JsonResponse
@@ -91,4 +88,55 @@ class ProductoController extends Controller
             'message' => 'Producto eliminado correctamente.',
         ]);
     }
+
+    
+public function update(Request $request, Producto $producto): JsonResponse
+{
+    $validated = $request->validate([
+        'categoria_id' => ['required', 'exists:categorias,id'],
+        'nombre' => ['required', 'string', 'max:255'],
+        'sku' => [
+            'required',
+            'string',
+            'max:100',
+            'unique:productos,sku,' . $producto->id,
+        ],
+        'descripcion' => ['nullable', 'string'],
+        'precio' => ['required', 'numeric', 'min:0'],
+        'stock' => ['required', 'integer', 'min:0'],
+        'etiqueta' => ['nullable', 'string', 'max:100'],
+        'activo' => ['sometimes', 'boolean'],
+
+        'imagenes' => ['nullable', 'array'],
+        'imagenes.*' => [
+            'image',
+            'mimes:jpg,jpeg,png,webp',
+            'max:5120',
+        ],
+    ]);
+
+    $imagenes = $request->file('imagenes', []);
+
+    unset($validated['imagenes']);
+
+    $producto->update($validated);
+
+    foreach ($imagenes as $indice => $imagen) {
+        $ruta = $imagen->store('productos', 'public');
+
+        $producto->imagenes()->create([
+            'ruta' => $ruta,
+            'principal' => $producto->imagenes()->count() === 0,
+            'orden' => $producto->imagenes()->count(),
+        ]);
+    }
+
+    return response()->json([
+        'message' => 'Producto actualizado correctamente.',
+        'producto' => $producto->load(['categoria', 'imagenes']),
+    ]);
 }
+
+}
+
+
