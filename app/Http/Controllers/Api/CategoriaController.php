@@ -6,20 +6,27 @@ use App\Http\Controllers\Controller;
 use App\Models\Categoria;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class CategoriaController extends Controller
 {
     // Listar categorías
-    public function index(): JsonResponse
-    {
-        $categorias = Categoria::withCount('productos')
-            ->where('activo', true)
-            ->orderBy('orden')
-            ->get();
+    
+public function index(): JsonResponse
+{
+    $categorias = Categoria::where('activo', true)
+        ->withCount([
+            'productos' => function ($query) {
+                $query->where('activo', true);
+            }
+        ])
+        ->orderBy('orden')
+        ->get();
 
-        return response()->json($categorias);
-    }
+    return response()->json($categorias);
+}
+
 
     // Mostrar una categoría
     public function show(Categoria $categoria): JsonResponse
@@ -55,12 +62,25 @@ class CategoriaController extends Controller
         $datos = $request->validate([
             'nombre' => ['required', 'string', 'max:255'],
             'descripcion' => ['nullable', 'string'],
-            'imagen' => ['nullable', 'string', 'max:255'],
-            'activo' => ['boolean'],
-            'orden' => ['integer'],
+            'imagen' => [
+                'nullable',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:5120',
+            ],
+            'activo' => ['required', 'boolean'],
+            'orden' => ['required', 'integer'],
         ]);
 
         $datos['slug'] = Str::slug($datos['nombre']);
+
+        if ($request->hasFile('imagen')) {
+            $datos['imagen'] = $request
+                ->file('imagen')
+                ->store('categorias', 'public');
+        } else {
+            $datos['imagen'] = null;
+        }
 
         $categoria = Categoria::create($datos);
 
@@ -75,22 +95,42 @@ class CategoriaController extends Controller
         Request $request,
         Categoria $categoria
     ): JsonResponse {
-
         $datos = $request->validate([
             'nombre' => ['required', 'string', 'max:255'],
             'descripcion' => ['nullable', 'string'],
-            'imagen' => ['nullable', 'string', 'max:255'],
-            'activo' => ['boolean'],
-            'orden' => ['integer'],
+            'imagen' => [
+                'nullable',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:5120',
+            ],
+            'activo' => ['required', 'boolean'],
+            'orden' => ['required', 'integer'],
         ]);
 
         $datos['slug'] = Str::slug($datos['nombre']);
+
+        if ($request->hasFile('imagen')) {
+            $imagenAnterior = $categoria->imagen;
+
+            $datos['imagen'] = $request
+                ->file('imagen')
+                ->store('categorias', 'public');
+
+            // Eliminar la imagen anterior si existe en el disco público
+            if ($imagenAnterior) {
+                Storage::disk('public')->delete($imagenAnterior);
+            }
+        } else {
+            // Si no se sube otra imagen, conservar la actual
+            unset($datos['imagen']);
+        }
 
         $categoria->update($datos);
 
         return response()->json([
             'message' => 'Categoría actualizada correctamente.',
-            'categoria' => $categoria,
+            'categoria' => $categoria->fresh(),
         ]);
     }
 
@@ -101,6 +141,10 @@ class CategoriaController extends Controller
             return response()->json([
                 'message' => 'No se puede eliminar una categoría que tiene productos.'
             ], 422);
+        }
+
+        if ($categoria->imagen) {
+            Storage::disk('public')->delete($categoria->imagen);
         }
 
         $categoria->delete();

@@ -90,6 +90,34 @@ class ProductoController extends Controller
     }
 
     
+public function adminIndex(): JsonResponse
+{
+    $productos = Producto::with([
+        'categoria',
+        'imagenes',
+    ])->orderBy('id', 'desc')->get();
+
+    return response()->json($productos);
+}
+
+
+public function reactivar(Producto $producto): JsonResponse
+{
+    $producto->update([
+        'activo' => true,
+    ]);
+
+    return response()->json([
+        'message' => 'Producto reactivado correctamente.',
+        'producto' => $producto->load([
+            'categoria',
+            'imagenes',
+        ]),
+    ]);
+}
+
+
+    
 public function update(Request $request, Producto $producto): JsonResponse
 {
     $validated = $request->validate([
